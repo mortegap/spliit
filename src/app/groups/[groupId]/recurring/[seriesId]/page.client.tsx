@@ -124,6 +124,12 @@ export function RecurringSeriesPageClient({ seriesId }: { seriesId: string }) {
                   utils.groups.expenses.invalidate()
                   return
                 }
+                // The edit form takes its values once, from whatever is cached
+                // when it mounts, so the stopped expense must not be served stale.
+                utils.groups.expenses.get.reset({
+                  groupId,
+                  expenseId: current.id,
+                })
                 utils.groups.expenses.invalidate()
                 utils.groups.stats.invalidate()
                 router.push(`/groups/${groupId}/recurring`)

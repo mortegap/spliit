@@ -171,3 +171,39 @@ test('recovers when a stale page stops a series that is already stopped', async 
   await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 15_000 })
   await expect(stopButton).toHaveCount(0)
 })
+
+test('shows a stopped expense as not recurring after it was opened before', async ({
+  page,
+}) => {
+  const groupId = await createGroup(page, {
+    name: `E2E Recurring reopen ${uniqueSuffix()}`,
+    participants: PARTICIPANTS,
+  })
+
+  await addExpense(page, groupId, {
+    title: 'Phone',
+    amount: '15',
+    paidBy: 'Alice',
+    recurrence: 'Monthly',
+  })
+
+  // Opening the expense first leaves it in the client cache.
+  await openExpense(page, 'Phone')
+  const field = fieldByLabel(page, 'Expense Recurrence').getByRole('combobox')
+  await expect(field).toContainText('Monthly')
+
+  await openTab(page, 'Recurring')
+  await page
+    .getByTestId('recurring-series')
+    .filter({ hasText: 'Phone' })
+    .click()
+  await page.getByRole('button', { name: 'Stop recurring' }).click()
+  await page.getByRole('button', { name: 'Stop', exact: true }).click()
+  await page.waitForURL(/\/recurring$/, { timeout: 30_000 })
+
+  await openTab(page, 'Expenses')
+  await openExpense(page, 'Phone')
+  await expect(
+    fieldByLabel(page, 'Expense Recurrence').getByRole('combobox'),
+  ).toContainText('None')
+})
