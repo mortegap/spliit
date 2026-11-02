@@ -5,6 +5,7 @@ import {
   expenseCard,
   EXPENSES_URL,
   openExpense,
+  openTab,
   uniqueSuffix,
 } from './app'
 import { expect, test } from './fixtures'
@@ -64,6 +65,69 @@ test('materialises past occurrences of a daily expense', async ({ page }) => {
   // the wall clock, and a run spanning midnight UTC would produce one more.
   await expect
     .poll(async () => await expenseCard(page, 'Coffee').count(), {
+      timeout: 20_000,
+    })
+    .toBeGreaterThanOrEqual(4)
+})
+
+test('lists and stops a recurring expense from the Recurring tab', async ({
+  page,
+}) => {
+  const groupId = await createGroup(page, {
+    name: `E2E Recurring tab ${uniqueSuffix()}`,
+    participants: PARTICIPANTS,
+  })
+
+  await addExpense(page, groupId, {
+    title: 'Netflix',
+    amount: '20',
+    paidBy: 'Alice',
+    recurrence: 'Monthly',
+  })
+
+  await openTab(page, 'Recurring')
+  const series = page.getByTestId('recurring-series').filter({
+    hasText: 'Netflix',
+  })
+  await expect(series).toContainText('Monthly')
+
+  await series.click()
+  await page.getByRole('button', { name: 'Stop recurring' }).click()
+  await page.getByRole('button', { name: 'Stop', exact: true }).click()
+  await page.waitForURL(/\/recurring$/, { timeout: 30_000 })
+
+  await expect(
+    page.getByText('There are no recurring expenses in this group.'),
+  ).toBeVisible()
+
+  // Stopping only ends the series: the expense itself is kept.
+  await page.goto(`/groups/${groupId}/expenses`)
+  await expect(expenseCard(page, 'Netflix')).toHaveCount(1)
+})
+
+test('shows the occurrences of a series in its history', async ({ page }) => {
+  const groupId = await createGroup(page, {
+    name: `E2E Recurring history ${uniqueSuffix()}`,
+    participants: PARTICIPANTS,
+  })
+
+  await addExpense(page, groupId, {
+    title: 'Coffee',
+    amount: '5',
+    paidBy: 'Alice',
+    recurrence: 'Daily',
+    date: daysAgo(3),
+  })
+
+  await page.goto(`/groups/${groupId}/recurring`)
+  await page
+    .getByTestId('recurring-series')
+    .filter({ hasText: 'Coffee' })
+    .click()
+
+  // A floor, as in the daily test above: a run spanning midnight UTC adds one.
+  await expect
+    .poll(async () => await page.getByTestId('recurring-occurrence').count(), {
       timeout: 20_000,
     })
     .toBeGreaterThanOrEqual(4)
