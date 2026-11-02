@@ -1,4 +1,4 @@
-import { getGroupExpenses, updateExpense } from './api'
+import { createExpense, getGroupExpenses, updateExpense } from './api'
 import { prisma } from './prisma'
 import { ExpenseFormValues } from './schemas'
 
@@ -6,7 +6,12 @@ jest.mock('./prisma', () => ({
   prisma: {
     $transaction: jest.fn(),
     activity: { create: jest.fn() },
-    expense: { findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+    expense: {
+      create: jest.fn(),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
     group: { findUnique: jest.fn() },
     recurringExpenseLink: { findMany: jest.fn() },
   },
@@ -114,6 +119,7 @@ describe('createRecurringExpenses', () => {
       categoryId: 0,
       paidById: 'participant-1',
       recurrenceRule,
+      recurringSeriesId: 'expense-0',
       expenseDate,
       createdAt: new Date(),
       category: null,
@@ -183,6 +189,21 @@ describe('createRecurringExpenses', () => {
     expect(day(created[0].expenseDate)).toBe('2025-02-28')
     expect(day(created[1].expenseDate)).toBe('2025-03-31')
     expect(created[0].recurringExpenseLink.create.anchorDay).toBe(31)
+  })
+
+  it('carries the series to the next occurrence', async () => {
+    const { createExpense } = setUp({
+      recurrenceRule: 'MONTHLY',
+      expenseDate: new Date(Date.UTC(2025, 0, 31)),
+      nextExpenseDate: new Date(Date.UTC(2025, 1, 28)),
+      anchorDay: 31,
+    })
+
+    await getGroupExpenses('group-1')
+
+    expect(createExpense.mock.calls[0][0].data.recurringSeriesId).toBe(
+      'expense-0',
+    )
   })
 
   it('derives the anchor day of a link created before the column existed', async () => {
@@ -282,6 +303,47 @@ describe('updateExpense', () => {
     expect(link).toEqual({ delete: true })
   })
 
+  async function updatedData(
+    existing: Partial<typeof existingExpense> & Record<string, unknown>,
+    values: ExpenseFormValues,
+  ) {
+    jest.mocked(prisma.group.findUnique).mockResolvedValue({
+      id: 'group-1',
+      participants: [{ id: 'participant-1' }],
+    } as never)
+    jest
+      .mocked(prisma.expense.findUnique)
+      .mockResolvedValue({ ...existingExpense, ...existing } as never)
+    await updateExpense('group-1', 'expense-1', values)
+    return jest.mocked(prisma.expense.update).mock.calls[0][0].data
+  }
+
+  it('starts a series when recurrence is turned on', async () => {
+    const data = await updatedData(
+      {
+        recurrenceRule: 'NONE',
+        recurringExpenseLink: null,
+        recurringSeriesId: null,
+      } as never,
+      formValues({}),
+    )
+
+    expect(data.recurringSeriesId).toBe('expense-1')
+  })
+
+  it('keeps the series when recurrence is turned back on', async () => {
+    const data = await updatedData(
+      {
+        recurrenceRule: 'NONE',
+        recurringExpenseLink: null,
+        recurringSeriesId: 'expense-0',
+      } as never,
+      formValues({}),
+    )
+
+    expect(data.recurringSeriesId).toBe('expense-0')
+  })
+
   it('clears the anchor day when switching to weekly', async () => {
     const link = await linkUpdate(formValues({ recurrenceRule: 'WEEKLY' }))
 
@@ -289,5 +351,47 @@ describe('updateExpense', () => {
       nextExpenseDate: new Date(Date.UTC(2025, 0, 22)),
       anchorDay: null,
     })
+  })
+})
+
+describe('createExpense', () => {
+  const formValues = (
+    overrides: Partial<ExpenseFormValues>,
+  ): ExpenseFormValues =>
+    ({
+      expenseDate: new Date(Date.UTC(2025, 0, 15)),
+      title: 'Rent',
+      category: 0,
+      amount: 1000,
+      paidBy: 'participant-1',
+      paidFor: [{ participant: 'participant-1', shares: 1 }],
+      splitMode: 'EVENLY',
+      isReimbursement: false,
+      documents: [],
+      recurrenceRule: 'NONE',
+      ...overrides,
+    }) as ExpenseFormValues
+
+  async function createdData(values: ExpenseFormValues) {
+    jest.mocked(prisma.group.findUnique).mockResolvedValue({
+      id: 'group-1',
+      participants: [{ id: 'participant-1' }],
+    } as never)
+    await createExpense(values, 'group-1', undefined, 'expense-9')
+    return jest.mocked(prisma.expense.create).mock.calls[0][0].data
+  }
+
+  beforeEach(() => jest.clearAllMocks())
+
+  it('starts a series on the new expense when it recurs', async () => {
+    const data = await createdData(formValues({ recurrenceRule: 'MONTHLY' }))
+
+    expect(data.recurringSeriesId).toBe('expense-9')
+  })
+
+  it('leaves the series empty for a one-off expense', async () => {
+    const data = await createdData(formValues({}))
+
+    expect(data.recurringSeriesId).toBeUndefined()
   })
 })

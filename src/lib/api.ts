@@ -81,6 +81,7 @@ export async function createExpense(
       paidById: expenseFormValues.paidBy,
       splitMode: expenseFormValues.splitMode,
       recurrenceRule: expenseFormValues.recurrenceRule,
+      recurringSeriesId: isCreateRecurrence ? expenseId : undefined,
       recurringExpenseLink: {
         ...(isCreateRecurrence
           ? {
@@ -287,6 +288,9 @@ export async function updateExpense(
       paidById: expenseFormValues.paidBy,
       splitMode: expenseFormValues.splitMode,
       recurrenceRule: expenseFormValues.recurrenceRule,
+      recurringSeriesId: isCreateRecurrenceExpenseLink
+        ? (existingExpense.recurringSeriesId ?? expenseId)
+        : undefined,
       paidFor: {
         create: expenseFormValues.paidFor
           .filter(
