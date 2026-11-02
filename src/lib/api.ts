@@ -491,6 +491,112 @@ export async function getActiveRecurringExpenses(groupId: string) {
   })
 }
 
+/**
+ * Returns the current frame of every active recurring series of a group,
+ * soonest next occurrence first. Unlike `getActiveRecurringExpenses`, it keeps
+ * reimbursements, so every series can be managed.
+ */
+export async function getRecurringExpenseSeries(groupId: string) {
+  await createRecurringExpenses()
+
+  const series = await prisma.expense.findMany({
+    select: {
+      id: true,
+      title: true,
+      amount: true,
+      originalAmount: true,
+      originalCurrency: true,
+      recurrenceRule: true,
+      recurringSeriesId: true,
+      isReimbursement: true,
+      paidBy: { select: { id: true, name: true } },
+      recurringExpenseLink: { select: { nextExpenseDate: true } },
+    },
+    where: {
+      groupId,
+      recurrenceRule: { not: RecurrenceRule.NONE },
+      recurringExpenseLink: { is: { nextExpenseCreatedAt: null } },
+    },
+  })
+
+  return series.sort(
+    (a, b) =>
+      (a.recurringExpenseLink?.nextExpenseDate.getTime() ?? 0) -
+      (b.recurringExpenseLink?.nextExpenseDate.getTime() ?? 0),
+  )
+}
+
+/**
+ * Returns every occurrence of a recurring series, newest first, and the
+ * current one if the series is still active. Series created before
+ * `recurringSeriesId` existed are found by the id of their expense.
+ */
+export async function getRecurringExpenseSeriesDetail(
+  groupId: string,
+  seriesId: string,
+) {
+  await createRecurringExpenses()
+
+  const occurrences = await prisma.expense.findMany({
+    select: {
+      id: true,
+      title: true,
+      expenseDate: true,
+      amount: true,
+      originalAmount: true,
+      originalCurrency: true,
+      recurrenceRule: true,
+      splitMode: true,
+      paidBy: { select: { id: true, name: true } },
+      recurringExpenseLink: {
+        select: { nextExpenseDate: true, nextExpenseCreatedAt: true },
+      },
+    },
+    where: {
+      groupId,
+      OR: [{ recurringSeriesId: seriesId }, { id: seriesId }],
+    },
+    orderBy: [{ expenseDate: 'desc' }, { createdAt: 'desc' }],
+  })
+
+  const current =
+    occurrences.find(
+      (occurrence) =>
+        occurrence.recurrenceRule !== RecurrenceRule.NONE &&
+        occurrence.recurringExpenseLink?.nextExpenseCreatedAt === null,
+    ) ?? null
+
+  return { current, occurrences }
+}
+
+export async function stopRecurringExpense(
+  groupId: string,
+  expenseId: string,
+  participantId?: string,
+) {
+  const expense = await getExpense(groupId, expenseId)
+  if (!expense || expense.groupId !== groupId)
+    throw new Error(`Invalid expense ID: ${expenseId}`)
+  // Only the current occurrence can stop a series; an older one has already
+  // been copied to its successor.
+  if (expense.recurringExpenseLink?.nextExpenseCreatedAt !== null)
+    throw new Error(`Expense ${expenseId} is not an active recurring expense`)
+
+  await logActivity(groupId, ActivityType.UPDATE_EXPENSE, {
+    participantId,
+    expenseId,
+    data: expense.title,
+  })
+
+  await prisma.expense.update({
+    where: { id: expenseId },
+    data: {
+      recurrenceRule: RecurrenceRule.NONE,
+      recurringExpenseLink: { delete: true },
+    },
+  })
+}
+
 export async function getExpense(groupId: string, expenseId: string) {
   return prisma.expense.findUnique({
     where: { id: expenseId },
