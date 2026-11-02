@@ -379,6 +379,28 @@
       }
     }
   },
+  "Recurring": {
+    "title": "Recurrentes",
+    "description": "Gastos que se repiten automáticamente en este grupo.",
+    "noRecurring": "No hay gastos recurrentes en este grupo.",
+    "paidBy": "Pagado por <strong>{paidBy}</strong>",
+    "next": "Próximo el {date}",
+    "back": "Gastos recurrentes",
+    "edit": "Editar",
+    "history": "Historial",
+    "latest": "último",
+    "StopPopup": {
+      "label": "Detener recurrencia",
+      "title": "¿Detener este gasto recurrente?",
+      "description": "No se crearán más gastos. Los que ya existen se conservan.",
+      "yes": "Detener",
+      "cancel": "Cancelar",
+      "ErrorToast": {
+        "title": "No se ha podido detener este gasto recurrente",
+        "description": "Ha cambiado mientras tanto. Revísalo y vuelve a intentarlo."
+      }
+    }
+  },
   "Activity": {
     "title": "Actividad",
     "description": "Aquí encontrarás todas las actividades recientes en tu grupo.",
