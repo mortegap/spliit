@@ -455,7 +455,11 @@
       "title": "Stop this recurring expense?",
       "description": "No new expenses will be created. The existing ones are kept.",
       "yes": "Stop",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "ErrorToast": {
+        "title": "Could not stop this recurring expense",
+        "description": "It was changed in the meantime. Check it and try again."
+      }
     }
   },
   "Activity": {

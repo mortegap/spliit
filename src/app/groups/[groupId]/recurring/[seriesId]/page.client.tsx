@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useToast } from '@/components/ui/use-toast'
 import { Locale } from '@/i18n/request'
 import { useActiveUser } from '@/lib/hooks'
 import {
@@ -31,6 +32,7 @@ export function RecurringSeriesPageClient({ seriesId }: { seriesId: string }) {
   const { groupId, group } = useCurrentGroup()
   const activeUserId = useActiveUser(groupId)
   const utils = trpc.useUtils()
+  const { toast } = useToast()
 
   const { data } = trpc.groups.expenses.recurring.get.useQuery({
     groupId,
@@ -104,11 +106,24 @@ export function RecurringSeriesPageClient({ seriesId }: { seriesId: string }) {
             </Button>
             <StopRecurringPopup
               onStop={async () => {
-                await stopMutateAsync({
-                  groupId,
-                  expenseId: current.id,
-                  participantId: activeUserId ?? undefined,
-                })
+                try {
+                  await stopMutateAsync({
+                    groupId,
+                    expenseId: current.id,
+                    participantId: activeUserId ?? undefined,
+                  })
+                } catch (err) {
+                  console.error(err)
+                  toast({
+                    title: t('Recurring.StopPopup.ErrorToast.title'),
+                    description: t(
+                      'Recurring.StopPopup.ErrorToast.description',
+                    ),
+                    variant: 'destructive',
+                  })
+                  utils.groups.expenses.invalidate()
+                  return
+                }
                 utils.groups.expenses.invalidate()
                 utils.groups.stats.invalidate()
                 router.push(`/groups/${groupId}/recurring`)

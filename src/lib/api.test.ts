@@ -112,11 +112,13 @@ describe('createRecurringExpenses', () => {
     expenseDate,
     nextExpenseDate,
     anchorDay,
+    recurringSeriesId = 'expense-0',
   }: {
     recurrenceRule: string | null
     expenseDate: Date
     nextExpenseDate: Date
     anchorDay: number | null
+    recurringSeriesId?: string | null
   }) {
     const currentFrameExpense = {
       id: 'expense-1',
@@ -126,7 +128,7 @@ describe('createRecurringExpenses', () => {
       categoryId: 0,
       paidById: 'participant-1',
       recurrenceRule,
-      recurringSeriesId: 'expense-0',
+      recurringSeriesId,
       expenseDate,
       createdAt: new Date(),
       category: null,
@@ -210,6 +212,22 @@ describe('createRecurringExpenses', () => {
 
     expect(createExpense.mock.calls[0][0].data.recurringSeriesId).toBe(
       'expense-0',
+    )
+  })
+
+  it('starts the series from the current occurrence when it has none', async () => {
+    const { createExpense } = setUp({
+      recurrenceRule: 'MONTHLY',
+      expenseDate: new Date(Date.UTC(2025, 0, 31)),
+      nextExpenseDate: new Date(Date.UTC(2025, 1, 28)),
+      anchorDay: 31,
+      recurringSeriesId: null,
+    })
+
+    await getGroupExpenses('group-1')
+
+    expect(createExpense.mock.calls[0][0].data.recurringSeriesId).toBe(
+      'expense-1',
     )
   })
 
@@ -516,18 +534,37 @@ describe('stopRecurringExpense', () => {
     recurringExpenseLink: { id: 'link-1', nextExpenseCreatedAt: null },
   }
 
+  function setUp({
+    expense = currentFrame,
+    deletedLinks = 1,
+  }: { expense?: unknown; deletedLinks?: number } = {}) {
+    const deleteLinks = jest.fn(async () => ({ count: deletedLinks }))
+    const updateExpense = jest.fn()
+    jest.mocked(prisma.recurringExpenseLink.findMany).mockResolvedValue([])
+    jest.mocked(prisma.expense.findUnique).mockResolvedValue(expense as never)
+    jest.mocked(prisma.$transaction).mockImplementation((async (
+      callback: (tx: unknown) => unknown,
+    ) =>
+      callback({
+        recurringExpenseLink: { deleteMany: deleteLinks },
+        expense: { update: updateExpense },
+      })) as never)
+    return { deleteLinks, updateExpense }
+  }
+
   beforeEach(() => jest.clearAllMocks())
 
   it('stops the current occurrence', async () => {
-    jest
-      .mocked(prisma.expense.findUnique)
-      .mockResolvedValue(currentFrame as never)
+    const { deleteLinks, updateExpense } = setUp()
 
     await stopRecurringExpense('group-1', 'expense-1', 'participant-1')
 
-    expect(prisma.expense.update).toHaveBeenCalledWith({
+    expect(deleteLinks).toHaveBeenCalledWith({
+      where: { currentFrameExpenseId: 'expense-1', nextExpenseCreatedAt: null },
+    })
+    expect(updateExpense).toHaveBeenCalledWith({
       where: { id: 'expense-1' },
-      data: { recurrenceRule: 'NONE', recurringExpenseLink: { delete: true } },
+      data: { recurrenceRule: 'NONE' },
     })
     expect(prisma.activity.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -540,23 +577,28 @@ describe('stopRecurringExpense', () => {
     })
   })
 
+  it('creates the occurrences that are due before stopping', async () => {
+    setUp()
+
+    await stopRecurringExpense('group-1', 'expense-1')
+
+    expect(prisma.recurringExpenseLink.findMany).toHaveBeenCalled()
+  })
+
   it('refuses an occurrence that was already followed by the next one', async () => {
-    jest.mocked(prisma.expense.findUnique).mockResolvedValue({
-      ...currentFrame,
-      recurringExpenseLink: { id: 'link-1', nextExpenseCreatedAt: new Date() },
-    } as never)
+    const { updateExpense } = setUp({ deletedLinks: 0 })
 
     await expect(stopRecurringExpense('group-1', 'expense-1')).rejects.toThrow()
-    expect(prisma.expense.update).not.toHaveBeenCalled()
+    expect(updateExpense).not.toHaveBeenCalled()
+    expect(prisma.activity.create).not.toHaveBeenCalled()
   })
 
   it('refuses an expense from another group', async () => {
-    jest.mocked(prisma.expense.findUnique).mockResolvedValue({
-      ...currentFrame,
-      groupId: 'group-2',
-    } as never)
+    const { deleteLinks } = setUp({
+      expense: { ...currentFrame, groupId: 'group-2' },
+    })
 
     await expect(stopRecurringExpense('group-1', 'expense-1')).rejects.toThrow()
-    expect(prisma.expense.update).not.toHaveBeenCalled()
+    expect(deleteLinks).not.toHaveBeenCalled()
   })
 })

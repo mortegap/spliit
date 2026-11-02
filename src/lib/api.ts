@@ -528,8 +528,8 @@ export async function getRecurringExpenseSeries(groupId: string) {
 
 /**
  * Returns every occurrence of a recurring series, newest first, and the
- * current one if the series is still active. Series created before
- * `recurringSeriesId` existed are found by the id of their expense.
+ * current one if the series is still active. An occurrence created by a
+ * version without `recurringSeriesId` is found by its own id.
  */
 export async function getRecurringExpenseSeriesDetail(
   groupId: string,
@@ -574,26 +574,32 @@ export async function stopRecurringExpense(
   expenseId: string,
   participantId?: string,
 ) {
+  // Due occurrences are created first, so stopping never skips one.
+  await createRecurringExpenses()
+
   const expense = await getExpense(groupId, expenseId)
   if (!expense || expense.groupId !== groupId)
     throw new Error(`Invalid expense ID: ${expenseId}`)
-  // Only the current occurrence can stop a series; an older one has already
-  // been copied to its successor.
-  if (expense.recurringExpenseLink?.nextExpenseCreatedAt !== null)
-    throw new Error(`Expense ${expenseId} is not an active recurring expense`)
+
+  await prisma.$transaction(async (transaction) => {
+    // Only the current occurrence has an open link; an older one has already
+    // been copied to its successor.
+    const { count } = await transaction.recurringExpenseLink.deleteMany({
+      where: { currentFrameExpenseId: expenseId, nextExpenseCreatedAt: null },
+    })
+    if (count === 0)
+      throw new Error(`Expense ${expenseId} is not an active recurring expense`)
+
+    await transaction.expense.update({
+      where: { id: expenseId },
+      data: { recurrenceRule: RecurrenceRule.NONE },
+    })
+  })
 
   await logActivity(groupId, ActivityType.UPDATE_EXPENSE, {
     participantId,
     expenseId,
     data: expense.title,
-  })
-
-  await prisma.expense.update({
-    where: { id: expenseId },
-    data: {
-      recurrenceRule: RecurrenceRule.NONE,
-      recurringExpenseLink: { delete: true },
-    },
   })
 }
 
@@ -752,6 +758,9 @@ async function createRecurringExpenses() {
                 },
               },
               id: newExpenseId,
+              recurringSeriesId:
+                currentExpenseRecord.recurringSeriesId ??
+                currentExpenseRecord.id,
               expenseDate: newExpenseDate,
               recurringExpenseLink: {
                 create: {

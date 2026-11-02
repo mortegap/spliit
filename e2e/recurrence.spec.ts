@@ -132,3 +132,42 @@ test('shows the occurrences of a series in its history', async ({ page }) => {
     })
     .toBeGreaterThanOrEqual(4)
 })
+
+test('recovers when a stale page stops a series that is already stopped', async ({
+  page,
+}) => {
+  const groupId = await createGroup(page, {
+    name: `E2E Recurring stale ${uniqueSuffix()}`,
+    participants: PARTICIPANTS,
+  })
+
+  await addExpense(page, groupId, {
+    title: 'Gym',
+    amount: '30',
+    paidBy: 'Alice',
+    recurrence: 'Monthly',
+  })
+
+  await page.goto(`/groups/${groupId}/recurring`)
+  await page.getByTestId('recurring-series').filter({ hasText: 'Gym' }).click()
+  const stopButton = page.getByRole('button', { name: 'Stop recurring' })
+  await expect(stopButton).toBeVisible()
+
+  // Stopped from another device: this page keeps its focus and its data.
+  const editHref = await page
+    .getByRole('link', { name: 'Edit' })
+    .getAttribute('href')
+  const expenseId = editHref!.split('/').at(-2)
+  const response = await page.request.post(
+    '/api/trpc/groups.expenses.recurring.stop',
+    { data: { json: { groupId, expenseId } } },
+  )
+  expect(response.ok()).toBe(true)
+
+  await stopButton.click()
+  await page.getByRole('button', { name: 'Stop', exact: true }).click()
+
+  // The refused stop refreshes the page, which no longer offers the actions.
+  await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 15_000 })
+  await expect(stopButton).toHaveCount(0)
+})
