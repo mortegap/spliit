@@ -141,7 +141,7 @@ export function RecurringSeriesPageClient({ seriesId }: { seriesId: string }) {
       <CardContent className="p-0 pb-4 sm:pb-6">
         <h3 className="px-6 pb-2 font-semibold">{t('Recurring.history')}</h3>
         <div className="flex flex-col">
-          {occurrences.map((occurrence, index) => (
+          {occurrences.map((occurrence) => (
             <Link
               key={occurrence.id}
               href={`/groups/${groupId}/expenses/${occurrence.id}/edit`}
@@ -152,7 +152,7 @@ export function RecurringSeriesPageClient({ seriesId }: { seriesId: string }) {
                 {formatDateOnly(occurrence.expenseDate, locale, {
                   dateStyle: 'medium',
                 })}
-                {index === 0 && current && (
+                {occurrence.id === current?.id && (
                   <span className="text-xs text-muted-foreground">
                     {' '}
                     ({t('Recurring.latest')})

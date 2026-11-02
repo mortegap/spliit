@@ -19,11 +19,11 @@ export function RecurringList() {
   const t = useTranslations()
   const locale = useLocale() as Locale
   const { groupId, group } = useCurrentGroup()
-  const { data, isLoading } = trpc.groups.expenses.recurring.list.useQuery({
+  const { data } = trpc.groups.expenses.recurring.list.useQuery({
     groupId,
   })
 
-  if (isLoading || !data || !group) {
+  if (!data || !group) {
     return (
       <div className="flex flex-col gap-4 px-6">
         {Array.from({ length: 3 }).map((_, index) => (

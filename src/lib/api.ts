@@ -499,7 +499,7 @@ export async function getActiveRecurringExpenses(groupId: string) {
 export async function getRecurringExpenseSeries(groupId: string) {
   await createRecurringExpenses()
 
-  const series = await prisma.expense.findMany({
+  return prisma.expense.findMany({
     select: {
       id: true,
       title: true,
@@ -517,13 +517,11 @@ export async function getRecurringExpenseSeries(groupId: string) {
       recurrenceRule: { not: RecurrenceRule.NONE },
       recurringExpenseLink: { is: { nextExpenseCreatedAt: null } },
     },
+    orderBy: [
+      { recurringExpenseLink: { nextExpenseDate: 'asc' } },
+      { title: 'asc' },
+    ],
   })
-
-  return series.sort(
-    (a, b) =>
-      (a.recurringExpenseLink?.nextExpenseDate.getTime() ?? 0) -
-      (b.recurringExpenseLink?.nextExpenseDate.getTime() ?? 0),
-  )
 }
 
 /**
@@ -543,10 +541,7 @@ export async function getRecurringExpenseSeriesDetail(
       title: true,
       expenseDate: true,
       amount: true,
-      originalAmount: true,
-      originalCurrency: true,
       recurrenceRule: true,
-      splitMode: true,
       paidBy: { select: { id: true, name: true } },
       recurringExpenseLink: {
         select: { nextExpenseDate: true, nextExpenseCreatedAt: true },

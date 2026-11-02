@@ -441,25 +441,17 @@ describe('getRecurringExpenseSeries', () => {
     })
   })
 
-  it('sorts series by next expense date', async () => {
-    jest.mocked(prisma.expense.findMany).mockResolvedValue([
-      {
-        id: 'rent',
-        recurringExpenseLink: {
-          nextExpenseDate: new Date(Date.UTC(2026, 11, 1)),
-        },
-      },
-      {
-        id: 'netflix',
-        recurringExpenseLink: {
-          nextExpenseDate: new Date(Date.UTC(2026, 10, 15)),
-        },
-      },
-    ] as never)
+  it('sorts series by next expense date, then by title', async () => {
+    jest.mocked(prisma.expense.findMany).mockResolvedValue([])
 
-    const series = await getRecurringExpenseSeries('group-1')
+    await getRecurringExpenseSeries('group-1')
 
-    expect(series.map(({ id }) => id)).toEqual(['netflix', 'rent'])
+    expect(
+      jest.mocked(prisma.expense.findMany).mock.calls[0][0]?.orderBy,
+    ).toEqual([
+      { recurringExpenseLink: { nextExpenseDate: 'asc' } },
+      { title: 'asc' },
+    ])
   })
 })
 
